@@ -1,0 +1,35 @@
+CREATE TABLE
+IF NOT EXISTS users
+(
+    id SERIAL PRIMARY KEY,
+    email VARCHAR
+(255) NOT NULL UNIQUE,
+    password VARCHAR
+(255) NOT NULL
+);
+
+INSERT INTO users
+  (email, password)
+VALUES
+  ('admin@petsync.com', '$2a$10$LzI...qOfMleJ9WqO3SjdOWPGDaZy
+');
+
+select *
+from users u
+
+UPDATE users SET password = '$2a$10$LzI...qOfMleJ9WqO3SjdOWPGDaZy
+' WHERE email = 'admin@petsync.com';
+
+ALTER TABLE users
+ADD COLUMN name VARCHAR
+(100),
+ADD COLUMN role VARCHAR
+(50),
+-- ex: banhista, tosador
+ADD COLUMN phone VARCHAR
+(20),
+ADD COLUMN hire_date DATE,
+ADD COLUMN is_active BOOLEAN DEFAULT TRUE,
+ADD COLUMN photo BYTEA,
+-- opcional, imagem
+ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;

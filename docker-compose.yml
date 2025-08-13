@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ama_user
+      POSTGRES_PASSWORD: ama_password
+      POSTGRES_DB: ask_me_anything
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ask-me-anything-app
+    restart: always
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ama_user
+      DB_PASSWORD: ama_password
+      DB_NAME: ask_me_anything
+    volumes:
+      - .:/app
+
+  redis:
+    networks:
+      - ama-net
+    image: redis:7
+    container_name: petsync-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+volumes:
+  postgres_data:
+  redis-data:
+
+networks:
+  ama-net:
+    name: ama-net
+    driver: bridge
