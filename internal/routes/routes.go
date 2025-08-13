@@ -67,6 +67,7 @@ func (rt *Router) setupAPIRoutes(r *chi.Mux, handler *httpHandlers.Handler) {
 		r.Mount("/questions", SetupQuestionRoutes(handler))
 		r.Mount("/answers", SetupAnswerRoutes(handler))
 		r.Mount("/users", SetupUserRoutes(handler))
+		r.Mount("/rooms", SetupRoomRoutes(handler))
 		// TODO: Add these routes when handlers are implemented
 		// r.Mount("/categories", SetupCategoryRoutes(handler))
 		// r.Mount("/votes", SetupVoteRoutes(handler))

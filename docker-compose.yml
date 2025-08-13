@@ -1,7 +1,9 @@
 version: '3.8'
 
-services:
+services: 
   postgres:
+    networks:
+      - ama-net
     image: postgres:15-alpine
     environment:
       POSTGRES_USER: ama_user
@@ -14,6 +16,8 @@ services:
       - ./migrations:/docker-entrypoint-initdb.d
 
   app:
+    networks:
+      - ama-net
     build:
       context: .
       dockerfile: Dockerfile
@@ -37,15 +41,42 @@ services:
     networks:
       - ama-net
     image: redis:7
-    container_name: petsync-redis
+    container_name: ask-me-anything-redis
     restart: always
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis-data:/data
+    
+  n8n:
+    container_name: ask-me-anything-n8n
+    build:
+      context: ./internal/n8n
+      dockerfile: Dockerfile
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "5679:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=123456
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - WEBHOOK_TUNNEL_URL=http://localhost:5679
+      - N8N_CUSTOM_EXTENSIONS=/data/custom
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./internal/n8n/custom:/data/custom
+    restart: always
+    networks:
+      - ama-net
+
 volumes:
   postgres_data:
   redis-data:
+  n8n_data:
 
 networks:
   ama-net:

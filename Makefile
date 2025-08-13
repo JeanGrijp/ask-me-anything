@@ -31,6 +31,18 @@ docker-down:
 docker-logs:
 	$(DOCKER_COMPOSE) logs -f
 
+docker-reload:
+	@echo "Stopping Docker containers..."
+	docker-compose down
+	# @echo "Restoring swagger docs..."
+	# rm -rf docs/
+	# swag init --parseDependency --parseInternal -g cmd/api/main.go
+	@echo "Starting Docker containers..."
+	COMPOSE_BAKE=true docker-compose up -d --build
+	@echo "Watching logs..."
+	docker compose logs -f redis n8n postgres app
+	@echo "Watching for file changes..."
+
 # Database migrations
 migrate-up:
 	migrate -path migrations -database "$(DB_URL)" up
