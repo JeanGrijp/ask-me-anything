@@ -7,14 +7,14 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
-func NewSuccessResponse(data interface{}) Response {
+func NewSuccessResponse(data any) Response {
 	return Response{
 		Status: "success",
 		Data:   data,
 	}
 }
 
-func NewSuccessMessage(message string, data interface{}) Response {
+func NewSuccessMessage(message string, data any) Response {
 	return Response{
 		Status:  "success",
 		Message: message,

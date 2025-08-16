@@ -1,32 +1,40 @@
 package validators
 
 import (
-	"github.com/go-playground/locales/pt_BR"
+	"errors"
+
+	"github.com/go-playground/locales/en"
 	ut "github.com/go-playground/universal-translator"
 	"github.com/go-playground/validator/v10"
-	ptBRTranslations "github.com/go-playground/validator/v10/translations/pt_BR"
+	en_translations "github.com/go-playground/validator/v10/translations/en"
 )
 
 var (
-	Validate   *validator.Validate
+	Validator  *validator.Validate
 	Translator ut.Translator
+
+	// ErrTranslatorNotFound is returned when the translator is not found
+	ErrTranslatorNotFound = errors.New("translator not found")
 )
 
+// InitValidator initializes the validator and translator
 func InitValidator() error {
-	Validate = validator.New()
+	// Create a new validator instance
+	Validator = validator.New()
 
-	// Configura o tradutor para português brasileiro
-	locale := pt_BR.New()
-	uni := ut.New(locale, locale)
+	// Create a new translator
+	en := en.New()
+	uni := ut.New(en, en)
 
-	trans, found := uni.GetTranslator("pt_BR")
+	// Get the English translator
+	var found bool
+	Translator, found = uni.GetTranslator("en")
 	if !found {
-		return nil
+		return ErrTranslatorNotFound
 	}
-	Translator = trans
 
-	// Registra as traduções padrão
-	if err := ptBRTranslations.RegisterDefaultTranslations(Validate, Translator); err != nil {
+	// Register the English translations
+	if err := en_translations.RegisterDefaultTranslations(Validator, Translator); err != nil {
 		return err
 	}
 

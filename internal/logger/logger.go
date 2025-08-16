@@ -197,7 +197,7 @@ func NewZapLogger() *ZapLogger {
 
 	// rotating file writer
 	fileWriter := zapcore.AddSync(&lumberjack.Logger{
-		Filename:   "./logs/api.log",
+		Filename:   "./internal/logger/logs/api.log",
 		MaxSize:    10, // MB
 		MaxBackups: 5,
 		MaxAge:     30, // days
