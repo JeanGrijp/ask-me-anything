@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -28,8 +29,22 @@ func (h apiHandler) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 
 	logger.Default.Debug(r.Context(), "creating room with theme", "theme", body.Theme)
 
-	roomID, err := h.q.InsertRoom(r.Context(), body.Theme)
+	// Adicionar timeout para operação de banco de dados
+	dbCtx, cancel := WithDatabaseTimeout(r.Context())
+	defer cancel()
+
+	roomID, err := h.q.InsertRoom(dbCtx, body.Theme)
 	if err != nil {
+		logger.Default.Error(r.Context(), "failed to insert room", "error", err)
+
+		// Verificar se foi erro de timeout
+		if dbCtx.Err() == context.DeadlineExceeded {
+			logger.Default.Warn(r.Context(), "database operation timed out", "error", dbCtx.Err())
+			// Retornar erro de timeout específico
+			http.Error(w, "request timeout", http.StatusRequestTimeout)
+			return
+		}
+
 		logger.Default.Error(r.Context(), "failed to insert room", "error", err)
 		http.Error(w, "something went wrong", http.StatusInternalServerError)
 		return

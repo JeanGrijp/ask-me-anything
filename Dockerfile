@@ -25,8 +25,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main ./cmd/wsrs/m
 # Stage 2: Final image
 FROM alpine:latest
 
-# Instalar ca-certificates para HTTPS
-RUN apk --no-cache add ca-certificates tzdata
+# Instalar ca-certificates e wget para HTTPS e health check
+RUN apk --no-cache add ca-certificates tzdata wget
 
 # Criar usuário não-root
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
@@ -50,7 +50,7 @@ USER appuser
 # Expor porta
 EXPOSE 8080
 
-# Health check
+# Health check - usando curl em vez de wget
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8080/api/rooms || exit 1
 

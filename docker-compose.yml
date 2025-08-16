@@ -1,4 +1,21 @@
 services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      WSRS_DATABASE_HOST: db
+      WSRS_DATABASE_PORT: 5432
+      WSRS_DATABASE_USER: ${WSRS_DATABASE_USER}
+      WSRS_DATABASE_PASSWORD: ${WSRS_DATABASE_PASSWORD}
+      WSRS_DATABASE_NAME: ${WSRS_DATABASE_NAME}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      - db
+    volumes:
+      - ./internal/logger/logs:/app/internal/logger/logs
+
   db:
     image: postgres:latest
     restart: unless-stopped

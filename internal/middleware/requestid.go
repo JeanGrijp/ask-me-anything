@@ -1,4 +1,4 @@
-package _middleware
+package middleware
 
 import (
 	"net"

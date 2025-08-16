@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/JeanGrijp/ask-me-anything/internal/api"
 	"github.com/JeanGrijp/ask-me-anything/internal/logger"
@@ -35,6 +36,7 @@ func main() {
 	if err != nil {
 		logger.Default.Fatal(ctx, "failed to create database connection pool", "error", err)
 	}
+	logger.Default.Info(ctx, "database connection pool created")
 
 	defer pool.Close()
 
@@ -46,10 +48,16 @@ func main() {
 
 	handler := api.NewHandler(pgstore.New(pool))
 
+	server := &http.Server{
+		Addr:    ":8080",
+		Handler: handler,
+	}
+
 	logger.Default.Info(ctx, "starting HTTP server", "port", 8080)
+	logger.Default.Info(ctx, "visit http://localhost:8080 to access the API")
 
 	go func() {
-		if err := http.ListenAndServe(":8080", handler); err != nil {
+		if err := server.ListenAndServe(); err != nil {
 			if !errors.Is(err, http.ErrServerClosed) {
 				logger.Default.Fatal(ctx, "HTTP server error", "error", err)
 			}
@@ -61,4 +69,12 @@ func main() {
 	<-quit
 
 	logger.Default.Info(ctx, "shutting down application")
+
+	// Graceful shutdown com timeout
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		logger.Default.Fatal(ctx, "server shutdown error", "error", err)
+	}
 }

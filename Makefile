@@ -305,6 +305,24 @@ docker-run: ## Executa aplicação no Docker
 	@echo "$(YELLOW)🐳 Executando no Docker...$(NC)"
 	@docker run -p 8080:8080 --env-file .env $(APP_NAME):latest
 
+.PHONY: docker-reload
+docker-reload: ## Para containers deste projeto e rebuilda tudo novamente
+	@echo "$(YELLOW)🔄 Parando containers do projeto ask-me-anything...$(NC)"
+	@docker compose down --remove-orphans
+	@echo "$(YELLOW)🏗️  Rebuildando e iniciando containers...$(NC)"
+	@docker compose up --build -d
+	@echo "$(GREEN)✅ Containers rebuildados e iniciados$(NC)"
+	@echo "$(GREEN)✅ PostgreSQL: localhost:5432$(NC)"
+	@echo "$(GREEN)✅ pgAdmin: http://localhost:8081$(NC)"
+	@echo ""
+	@echo "$(BLUE)📋 Logs dos serviços (Ctrl+C para sair):$(NC)"
+	@docker compose logs -f
+
+.PHONY: docker-logs
+docker-logs: ## Mostra logs dos containers em tempo real
+	@echo "$(BLUE)📋 Logs dos serviços Docker (Ctrl+C para sair):$(NC)"
+	@docker compose logs -f
+
 # ===========================
 # 🔧 UTILITIES
 # ===========================

@@ -4,10 +4,11 @@ import (
 	"context"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/JeanGrijp/ask-me-anything/internal/auth"
 	"github.com/JeanGrijp/ask-me-anything/internal/logger"
-	_middleware "github.com/JeanGrijp/ask-me-anything/internal/middleware"
+	custommiddleware "github.com/JeanGrijp/ask-me-anything/internal/middleware"
 	"github.com/JeanGrijp/ask-me-anything/internal/store/pgstore"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -42,7 +43,13 @@ func NewHandler(q *pgstore.Queries) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.Recoverer, middleware.Logger)
 
-	r.Use(_middleware.RequestIDMiddleware)
+	// Adicionar middleware de timeout global
+	r.Use(custommiddleware.TimeoutMiddleware(custommiddleware.DefaultRequestTimeout))
+
+	// Adicionar middleware de enriquecimento de context
+	r.Use(custommiddleware.ContextEnrichmentMiddleware)
+
+	r.Use(custommiddleware.RequestIDMiddleware)
 
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"https://*", "http://*"},
@@ -131,11 +138,29 @@ func (h apiHandler) notifyClients(msg Message) {
 
 	logger.Default.Debug(context.Background(), "notifying clients", "room_id", msg.RoomID, "message_kind", msg.Kind, "subscriber_count", len(subscribers))
 
+	// Criar context com timeout para notificações
+	ctx, cancel := WithClientTimeout(context.Background())
+	defer cancel()
+
 	disconnectedClients := 0
-	for conn, cancel := range subscribers {
-		if err := conn.WriteJSON(msg); err != nil {
-			logger.Default.Error(context.Background(), "failed to send message to client", "room_id", msg.RoomID, "message_kind", msg.Kind, "error", err)
-			cancel()
+	for conn, cancelFunc := range subscribers {
+		// Enviar mensagem com timeout
+		done := make(chan error, 1)
+		go func() {
+			conn.SetWriteDeadline(time.Now().Add(ClientNotificationTimeout))
+			done <- conn.WriteJSON(msg)
+		}()
+
+		select {
+		case err := <-done:
+			if err != nil {
+				logger.Default.Error(context.Background(), "failed to send message to client", "room_id", msg.RoomID, "message_kind", msg.Kind, "error", err)
+				cancelFunc()
+				disconnectedClients++
+			}
+		case <-ctx.Done():
+			logger.Default.Warn(context.Background(), "timeout sending message to client", "room_id", msg.RoomID, "message_kind", msg.Kind)
+			cancelFunc()
 			disconnectedClients++
 		}
 	}
@@ -162,15 +187,50 @@ func (h apiHandler) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 
 	defer c.Close()
 
+	// Criar um context com timeout para a conexão WebSocket
 	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	// Adicionar room_id ao context para rastreamento
+	ctx = WithRoomID(ctx, rawRoomID)
 
 	h.mu.Lock()
 	if _, ok := h.subscribers[rawRoomID]; !ok {
 		h.subscribers[rawRoomID] = make(map[*websocket.Conn]context.CancelFunc)
 	}
-	logger.Default.Info(r.Context(), "new client connected", "room_id", rawRoomID, "client_ip", r.RemoteAddr, "total_subscribers", len(h.subscribers[rawRoomID])+1)
+	logger.Default.Info(ctx, "new client connected", "room_id", rawRoomID, "client_ip", r.RemoteAddr, "total_subscribers", len(h.subscribers[rawRoomID])+1)
 	h.subscribers[rawRoomID][c] = cancel
 	h.mu.Unlock()
+
+	// Configurar timeouts para WebSocket
+	c.SetReadDeadline(time.Now().Add(WebSocketReadTimeout))
+	c.SetWriteDeadline(time.Now().Add(WebSocketWriteTimeout))
+
+	// Configurar pong handler para manter conexão viva
+	c.SetPongHandler(func(string) error {
+		c.SetReadDeadline(time.Now().Add(WebSocketReadTimeout))
+		return nil
+	})
+
+	// Enviar ping periodicamente para manter conexão viva
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				c.SetWriteDeadline(time.Now().Add(WebSocketWriteTimeout))
+				if err := c.WriteMessage(websocket.PingMessage, nil); err != nil {
+					logger.Default.Debug(ctx, "failed to send ping", "error", err)
+					cancel()
+					return
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 
 	<-ctx.Done()
 

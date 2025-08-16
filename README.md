@@ -4,10 +4,16 @@ Uma aplicação de perguntas e respostas construída em Go com PostgreSQL, WebSo
 
 ## 🚀 Tecnologias
 
-- **Backend**: Go 1.24+
+- **Backend**: Go 1.25+
 - **Database**: PostgreSQL
 - **Router**: Chi
-- **WebSocket**: G## 🔄 Mudanças Recentes
+- **WebSocket**: Gorilla WebSocket
+- **Database Query**: SQLC
+- **Migrations**: golang-migrate
+- **Logs**: zap (uber-go)
+- **Containerização**: Docker & Docker Compose
+
+## 🔄 Mudanças Recentes
 
 ### Schema Alignment (Migration 002)
 
