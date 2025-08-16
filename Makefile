@@ -308,9 +308,9 @@ docker-run: ## Executa aplicação no Docker
 .PHONY: docker-reload
 docker-reload: ## Para containers deste projeto e rebuilda tudo novamente
 	@echo "$(YELLOW)🔄 Parando containers do projeto ask-me-anything...$(NC)"
-	@docker compose down --remove-orphans
+	@docker compose down
 	@echo "$(YELLOW)🏗️  Rebuildando e iniciando containers...$(NC)"
-	@docker compose up --build -d
+	@docker compose up --build
 	@echo "$(GREEN)✅ Containers rebuildados e iniciados$(NC)"
 	@echo "$(GREEN)✅ PostgreSQL: localhost:5432$(NC)"
 	@echo "$(GREEN)✅ pgAdmin: http://localhost:8081$(NC)"
