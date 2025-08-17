@@ -245,3 +245,56 @@ func (h apiHandler) handleGetRoomMessage(w http.ResponseWriter, r *http.Request)
 	logger.Default.Debug(r.Context(), "message fetched successfully", "room_id", rawRoomID, "message_id", rawMessageID)
 	sendJSON(w, messages)
 }
+
+func (h apiHandler) handleDeleteRoom(w http.ResponseWriter, r *http.Request) {
+	rawRoomID := chi.URLParam(r, "room_id")
+	roomID, err := uuid.Parse(rawRoomID)
+	if err != nil {
+		logger.Default.Warn(r.Context(), "invalid room ID in delete request", "room_id", rawRoomID, "error", err)
+		http.Error(w, "invalid room id", http.StatusBadRequest)
+		return
+	}
+
+	logger.Default.Info(r.Context(), "deleting room", "room_id", rawRoomID)
+
+	// Get user session to verify ownership
+	session, hasSession := middleware.GetUserSessionFromContext(r.Context())
+	if !hasSession {
+		logger.Default.Warn(r.Context(), "no session found for room deletion", "room_id", rawRoomID)
+		http.Error(w, "authentication required", http.StatusUnauthorized)
+		return
+	}
+
+	// Delete room and all associated data (query includes ownership verification)
+	rowsAffected, err := h.q.DeleteRoomAndMessages(r.Context(), pgstore.DeleteRoomAndMessagesParams{
+		ID:           roomID,
+		SessionToken: session.SessionToken,
+	})
+	if err != nil {
+		logger.Default.Error(r.Context(), "failed to delete room", "room_id", rawRoomID, "error", err)
+		http.Error(w, "failed to delete room", http.StatusInternalServerError)
+		return
+	}
+
+	// Check if room was actually deleted (user was the creator)
+	if rowsAffected == 0 {
+		logger.Default.Warn(r.Context(), "room deletion denied - not creator", "room_id", rawRoomID)
+		http.Error(w, "only room creator can delete this room", http.StatusForbidden)
+		return
+	}
+
+	logger.Default.Info(r.Context(), "room deleted successfully", "room_id", rawRoomID, "rows_affected", rowsAffected)
+
+	// Send success response
+	w.WriteHeader(http.StatusNoContent)
+
+	// Notify all clients via WebSocket that room was deleted
+	go h.notifyClients(Message{
+		Kind:   MessageKindRoomDeleted,
+		RoomID: rawRoomID,
+		Value: MessageRoomDeleted{
+			ID:     rawRoomID,
+			Reason: "deleted_by_creator",
+		},
+	})
+}

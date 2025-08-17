@@ -178,3 +178,41 @@ WHERE
     ur.message_id = $1
 GROUP BY
     ur.reaction_type;
+
+-- Room Deletion Operations
+-- name: DeleteRoomAndMessages :execrows
+WITH
+    room_check AS (
+        SELECT 1
+        FROM
+            room_creators rc
+            JOIN user_sessions us ON rc.creator_session_id = us.id
+        WHERE
+            rc.room_id = $1
+            AND us.session_token = $2
+    ),
+    deleted_reactions AS (
+        DELETE FROM user_reactions
+        WHERE
+            room_id = $1
+            AND EXISTS (
+                SELECT 1
+                FROM room_check
+            ) RETURNING user_reactions.id
+    ),
+    deleted_messages AS (
+        DELETE FROM messages
+        WHERE
+            room_id = $1
+            AND EXISTS (
+                SELECT 1
+                FROM room_check
+            ) RETURNING messages.id
+    )
+DELETE FROM rooms
+WHERE
+    rooms.id = $1
+    AND EXISTS (
+        SELECT 1
+        FROM room_check
+    );

@@ -101,6 +101,45 @@ func (q *Queries) CreateUserSession(ctx context.Context, arg CreateUserSessionPa
 	return i, err
 }
 
+const deleteRoomAndMessages = `-- name: DeleteRoomAndMessages :execrows
+WITH room_check AS (
+    SELECT 1
+    FROM room_creators rc
+    JOIN user_sessions us ON rc.creator_session_id = us.id
+    WHERE rc.room_id = $1
+    AND us.session_token = $2
+),
+deleted_reactions AS (
+    DELETE FROM user_reactions 
+    WHERE room_id = $1
+    AND EXISTS (SELECT 1 FROM room_check)
+    RETURNING user_reactions.id
+),
+deleted_messages AS (
+    DELETE FROM messages 
+    WHERE room_id = $1
+    AND EXISTS (SELECT 1 FROM room_check)
+    RETURNING messages.id
+)
+DELETE FROM rooms
+WHERE rooms.id = $1
+AND EXISTS (SELECT 1 FROM room_check)
+`
+
+type DeleteRoomAndMessagesParams struct {
+	ID           uuid.UUID `db:"id" json:"id"`
+	SessionToken string    `db:"session_token" json:"session_token"`
+}
+
+// Room Deletion Operations
+func (q *Queries) DeleteRoomAndMessages(ctx context.Context, arg DeleteRoomAndMessagesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteRoomAndMessages, arg.ID, arg.SessionToken)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteUserSession = `-- name: DeleteUserSession :exec
 DELETE FROM user_sessions WHERE session_token = $1
 `
@@ -231,27 +270,30 @@ func (q *Queries) GetRoomMessages(ctx context.Context, roomID uuid.UUID) ([]Mess
 }
 
 const getRoomMessagesWithUserReactions = `-- name: GetRoomMessagesWithUserReactions :many
-SELECT 
-    m.id, 
-    m.room_id, 
-    m.message, 
-    m.reaction_count, 
+SELECT
+    m.id,
+    m.room_id,
+    m.message,
+    m.reaction_count,
     m.answered,
-    CASE 
-        WHEN ur.id IS NOT NULL THEN true 
-        ELSE false 
+    CASE
+        WHEN ur.id IS NOT NULL THEN true
+        ELSE false
     END as user_reacted
 FROM messages m
-LEFT JOIN user_reactions ur ON (
-    m.id = ur.message_id 
-    AND ur.session_id = (
-        SELECT id FROM user_sessions 
-        WHERE session_token = $2 
-        AND expires_at > NOW()
+    LEFT JOIN user_reactions ur ON (
+        m.id = ur.message_id
+        AND ur.session_id = (
+            SELECT id
+            FROM user_sessions
+            WHERE
+                session_token = $2
+                AND expires_at > NOW()
+        )
+        AND ur.reaction_type = 'like'
     )
-    AND ur.reaction_type = 'like'
-)
-WHERE m.room_id = $1
+WHERE
+    m.room_id = $1
 ORDER BY m.id
 `
 

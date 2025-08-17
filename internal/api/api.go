@@ -124,6 +124,9 @@ func NewHandler(q *pgstore.Queries) http.Handler {
 				// Rota para verificar se é host (com middleware opcional)
 				r.With(auth.OptionalHostMiddleware(sessionMgr)).Get("/host-status", a.handleGetHostStatus)
 
+				// Rota para deletar sala (requer sessão de usuário - middleware já aplicado globalmente)
+				r.Delete("/", a.handleDeleteRoom)
+
 				r.Route("/messages", func(r chi.Router) {
 					r.Post("/", a.handleCreateRoomMessage)
 					r.Get("/", a.handleGetRoomMessages)
@@ -165,6 +168,7 @@ const (
 	MessageKindMessageRactionIncreased = "message_reaction_increased"
 	MessageKindMessageRactionDecreased = "message_reaction_decreased"
 	MessageKindMessageAnswered         = "message_answered"
+	MessageKindRoomDeleted             = "room_deleted"
 )
 
 type MessageMessageReactionIncreased struct {
@@ -184,6 +188,11 @@ type MessageMessageAnswered struct {
 type MessageMessageCreated struct {
 	ID      string `json:"id"`
 	Message string `json:"message"`
+}
+
+type MessageRoomDeleted struct {
+	ID     string `json:"id"`
+	Reason string `json:"reason"`
 }
 
 type Message struct {
