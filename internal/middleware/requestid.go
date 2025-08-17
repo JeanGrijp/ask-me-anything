@@ -25,12 +25,13 @@ func RequestIDMiddleware(next http.Handler) http.Handler {
 
 		ctx = logger.InjectRequestID(ctx)
 		ctx = logger.InjectClientIP(ctx, getClientIP(r))
-		ctx = logger.InjectUserAgent(ctx, r.UserAgent())
 		ctx = logger.InjectMethod(ctx, r.Method)
 		ctx = logger.InjectPath(ctx, r.URL.Path)
-		ctx = logger.InjectQuery(ctx, r.URL.RawQuery)
-		ctx = logger.InjectReferer(ctx, r.Referer())
-		ctx = logger.InjectHost(ctx, r.Host)
+
+		// Só adicionar query se não estiver vazio
+		if r.URL.RawQuery != "" {
+			ctx = logger.InjectQuery(ctx, r.URL.RawQuery)
+		}
 
 		recorder := &statusRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 		r = r.WithContext(ctx)
@@ -42,7 +43,24 @@ func RequestIDMiddleware(next http.Handler) http.Handler {
 		ctx = logger.InjectLatency(ctx, latency)
 		ctx = logger.InjectStatusCode(ctx, statusCode)
 
-		logger.Default.Info(ctx, "Request handled")
+		// Log simplificado - apenas informações essenciais
+		logFields := []interface{}{
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", statusCode,
+		}
+
+		// Adicionar query apenas se existir
+		if r.URL.RawQuery != "" {
+			logFields = append(logFields, "query", r.URL.RawQuery)
+		}
+
+		// Adicionar latência apenas se for significativa (> 1ms)
+		if latency > time.Millisecond {
+			logFields = append(logFields, "latency", latency.String())
+		}
+
+		logger.Default.Info(ctx, "Request handled", logFields...)
 	})
 }
 

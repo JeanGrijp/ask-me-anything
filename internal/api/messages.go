@@ -4,12 +4,14 @@ import (
 	"net/http"
 
 	"github.com/JeanGrijp/ask-me-anything/internal/logger"
+	"github.com/JeanGrijp/ask-me-anything/internal/middleware"
+	"github.com/JeanGrijp/ask-me-anything/internal/store/pgstore"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
 func (h apiHandler) handleReactToMessage(w http.ResponseWriter, r *http.Request) {
-	_, rawRoomID, _, ok := h.readRoom(w, r)
+	_, rawRoomID, roomID, ok := h.readRoom(w, r)
 	if !ok {
 		return
 	}
@@ -24,6 +26,27 @@ func (h apiHandler) handleReactToMessage(w http.ResponseWriter, r *http.Request)
 
 	logger.Default.Debug(r.Context(), "adding reaction to message", "room_id", rawRoomID, "message_id", rawID)
 
+	// Get user session for tracking reactions
+	session, hasSession := middleware.GetUserSessionFromContext(r.Context())
+	if !hasSession {
+		logger.Default.Warn(r.Context(), "no user session found for reaction", "room_id", rawRoomID, "message_id", rawID)
+		http.Error(w, "session required", http.StatusUnauthorized)
+		return
+	}
+
+	// Add user reaction to tracking table
+	err = h.q.AddUserReaction(r.Context(), pgstore.AddUserReactionParams{
+		SessionID:    session.ID,
+		RoomID:       roomID,
+		MessageID:    id,
+		ReactionType: "like", // For now, we only support "like" reactions
+	})
+	if err != nil {
+		logger.Default.Error(r.Context(), "failed to add user reaction", "error", err)
+		// Continue anyway - this is not critical for the reaction count
+	}
+
+	// Increment reaction count
 	count, err := h.q.ReactToMessage(r.Context(), id)
 	if err != nil {
 		http.Error(w, "something went wrong", http.StatusInternalServerError)

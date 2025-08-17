@@ -8,6 +8,7 @@ import (
 
 	"github.com/JeanGrijp/ask-me-anything/internal/auth"
 	"github.com/JeanGrijp/ask-me-anything/internal/logger"
+	"github.com/JeanGrijp/ask-me-anything/internal/middleware"
 	"github.com/JeanGrijp/ask-me-anything/internal/store/pgstore"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -51,6 +52,12 @@ func (h apiHandler) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger.Default.Info(r.Context(), "room created successfully", "room_id", roomID.String())
+
+	// Set the current user as the room creator
+	if err := h.setRoomCreator(r, roomID); err != nil {
+		logger.Default.Warn(r.Context(), "failed to set room creator", "room_id", roomID.String(), "error", err)
+		// Continue execution - this is not a critical failure
+	}
 
 	// Criar sessão de host para o criador da sala
 	hostSession := h.sessionMgr.CreateHostSession(roomID)
@@ -167,19 +174,43 @@ func (h apiHandler) handleGetRoomMessages(w http.ResponseWriter, r *http.Request
 
 	logger.Default.Debug(r.Context(), "fetching messages for room", "room_id", rawRoomID)
 
-	messages, err := h.q.GetRoomMessages(r.Context(), roomID)
-	if err != nil {
-		http.Error(w, "something went wrong", http.StatusInternalServerError)
-		logger.Default.Error(r.Context(), "failed to get room messages", "room_id", rawRoomID, "error", err)
-		return
-	}
+	// Get session token to check user reactions
+	sessionToken, hasSession := middleware.GetUserSessionToken(r.Context())
 
-	if messages == nil {
-		messages = []pgstore.Message{}
-	}
+	if hasSession {
+		// Use enhanced query with user reaction info
+		messages, err := h.q.GetRoomMessagesWithUserReactions(r.Context(), pgstore.GetRoomMessagesWithUserReactionsParams{
+			RoomID:       roomID,
+			SessionToken: sessionToken,
+		})
+		if err != nil {
+			http.Error(w, "something went wrong", http.StatusInternalServerError)
+			logger.Default.Error(r.Context(), "failed to get room messages with user reactions", "room_id", rawRoomID, "error", err)
+			return
+		}
 
-	logger.Default.Debug(r.Context(), "messages fetched successfully", "room_id", rawRoomID, "count", len(messages))
-	sendJSON(w, messages)
+		if messages == nil {
+			messages = []pgstore.GetRoomMessagesWithUserReactionsRow{}
+		}
+
+		logger.Default.Debug(r.Context(), "messages with user reactions fetched successfully", "room_id", rawRoomID, "count", len(messages))
+		sendJSON(w, messages)
+	} else {
+		// Fallback to basic query without user reactions
+		messages, err := h.q.GetRoomMessages(r.Context(), roomID)
+		if err != nil {
+			http.Error(w, "something went wrong", http.StatusInternalServerError)
+			logger.Default.Error(r.Context(), "failed to get room messages", "room_id", rawRoomID, "error", err)
+			return
+		}
+
+		if messages == nil {
+			messages = []pgstore.Message{}
+		}
+
+		logger.Default.Debug(r.Context(), "basic messages fetched successfully", "room_id", rawRoomID, "count", len(messages))
+		sendJSON(w, messages)
+	}
 }
 
 func (h apiHandler) handleGetRoomMessage(w http.ResponseWriter, r *http.Request) {

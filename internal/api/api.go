@@ -20,12 +20,13 @@ import (
 )
 
 type apiHandler struct {
-	q           *pgstore.Queries
-	r           *chi.Mux
-	upgrader    websocket.Upgrader
-	subscribers map[string]map[*websocket.Conn]context.CancelFunc
-	mu          *sync.Mutex
-	sessionMgr  *auth.SessionManager
+	q              *pgstore.Queries
+	r              *chi.Mux
+	upgrader       websocket.Upgrader
+	subscribers    map[string]map[*websocket.Conn]context.CancelFunc
+	mu             *sync.Mutex
+	sessionMgr     *auth.SessionManager
+	userSessionMgr *auth.UserSessionManager
 }
 
 func (h apiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -34,6 +35,7 @@ func (h apiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func NewHandler(q *pgstore.Queries) http.Handler {
 	sessionMgr := auth.NewSessionManager()
+	userSessionMgr := auth.NewUserSessionManager(q)
 
 	a := apiHandler{
 		q: q,
@@ -43,33 +45,26 @@ func NewHandler(q *pgstore.Queries) http.Handler {
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 		},
-		subscribers: make(map[string]map[*websocket.Conn]context.CancelFunc),
-		mu:          &sync.Mutex{},
-		sessionMgr:  sessionMgr,
+		subscribers:    make(map[string]map[*websocket.Conn]context.CancelFunc),
+		mu:             &sync.Mutex{},
+		sessionMgr:     sessionMgr,
+		userSessionMgr: userSessionMgr,
 	}
 
 	// Router principal com middlewares
 	r := chi.NewRouter()
 
-	r.Use(middleware.RequestID, middleware.Recoverer, middleware.Logger)
+	r.Use(middleware.RequestID, middleware.Recoverer)
 	r.Use(custommiddleware.ContextEnrichmentMiddleware)
 	r.Use(custommiddleware.RequestIDMiddleware)
+	r.Use(custommiddleware.UserSessionMiddleware(userSessionMgr))
 
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"https://*", "http://*"},
+		AllowedOrigins:   []string{"http://localhost:3000", "http://localhost:8080", "http://127.0.0.1:3000", "http://127.0.0.1:8080"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Host-Token"},
-		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: false,
-		MaxAge:           300,
-	}))
-
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"https://*", "http://*"},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Host-Token"},
-		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: false,
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Host-Token", "Cookie"},
+		ExposedHeaders:   []string{"Set-Cookie"},
+		AllowCredentials: true,
 		MaxAge:           300,
 	}))
 
@@ -112,6 +107,13 @@ func NewHandler(q *pgstore.Queries) http.Handler {
 	r.Route("/api", func(r chi.Router) {
 		// Aplicar timeout apenas nas rotas da API, não no WebSocket
 		r.Use(custommiddleware.TimeoutMiddleware(custommiddleware.DefaultRequestTimeout))
+
+		// User management routes
+		r.Route("/user", func(r chi.Router) {
+			r.Delete("/logout", a.handleUserLogout)
+			r.Get("/rooms", a.handleGetUserRooms)
+		})
+
 		r.Route("/rooms", func(r chi.Router) {
 			r.Post("/", a.handleCreateRoom)
 			r.Get("/", a.handleGetRooms)
@@ -146,8 +148,6 @@ func NewHandler(q *pgstore.Queries) http.Handler {
 
 	// Retornar um handler que separa WebSocket das outras rotas
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		logger.Default.Info(req.Context(), "Request intercepted", "method", req.Method, "path", req.URL.Path)
-
 		// Verificar se é uma rota WebSocket usando strings.HasPrefix
 		if req.Method == "GET" && strings.HasPrefix(req.URL.Path, "/subscribe/") {
 			logger.Default.Info(req.Context(), "WebSocket route detected", "path", req.URL.Path)
@@ -155,7 +155,6 @@ func NewHandler(q *pgstore.Queries) http.Handler {
 			return
 		}
 
-		logger.Default.Info(req.Context(), "Routing to normal handler", "path", req.URL.Path)
 		// Para todas as outras rotas, usar o router normal
 		a.r.ServeHTTP(w, req)
 	})

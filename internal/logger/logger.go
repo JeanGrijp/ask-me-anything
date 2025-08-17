@@ -221,17 +221,17 @@ func NewZapLogger() *ZapLogger {
 
 func baseFields(ctx context.Context) []any {
 	return []any{
-		"request_id", RequestIDFromContext(ctx),
-		"client_ip", ClientIPFromContext(ctx),
-		"user_agent", UserAgentFromContext(ctx),
+		// "request_id", RequestIDFromContext(ctx),
+		// "client_ip", ClientIPFromContext(ctx),
+		// "user_agent", UserAgentFromContext(ctx),
 		"method", MethodFromContext(ctx),
 		"path", PathFromContext(ctx),
 		"query", QueryFromContext(ctx),
-		"referer", RefererFromContext(ctx),
-		"host", HostFromContext(ctx),
-		"latency", LatencyFromContext(ctx),
-		"status_code", StatusCodeFromContext(ctx),
-		"user_id", AuthenticatedUserIDFromContext(ctx),
+		// "referer", RefererFromContext(ctx),
+		// "host", HostFromContext(ctx),
+		// "latency", LatencyFromContext(ctx),
+		// "status_code", StatusCodeFromContext(ctx),
+		// "user_id", AuthenticatedUserIDFromContext(ctx),
 	}
 }
 
