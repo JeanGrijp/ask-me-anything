@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/JeanGrijp/ask-me-anything/internal/logger"
 	custommiddleware "github.com/JeanGrijp/ask-me-anything/internal/middleware"
 	"github.com/JeanGrijp/ask-me-anything/internal/store/pgstore"
+	"github.com/JeanGrijp/ask-me-anything/internal/utils"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -33,22 +36,23 @@ func NewHandler(q *pgstore.Queries) http.Handler {
 	sessionMgr := auth.NewSessionManager()
 
 	a := apiHandler{
-		q:           q,
-		upgrader:    websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
+		q: q,
+		upgrader: websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool { return true },
+			// Configurações básicas para evitar problemas de hijacking
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
+		},
 		subscribers: make(map[string]map[*websocket.Conn]context.CancelFunc),
 		mu:          &sync.Mutex{},
 		sessionMgr:  sessionMgr,
 	}
 
+	// Router principal com middlewares
 	r := chi.NewRouter()
+
 	r.Use(middleware.RequestID, middleware.Recoverer, middleware.Logger)
-
-	// Adicionar middleware de timeout global
-	r.Use(custommiddleware.TimeoutMiddleware(custommiddleware.DefaultRequestTimeout))
-
-	// Adicionar middleware de enriquecimento de context
 	r.Use(custommiddleware.ContextEnrichmentMiddleware)
-
 	r.Use(custommiddleware.RequestIDMiddleware)
 
 	r.Use(cors.Handler(cors.Options{
@@ -60,9 +64,54 @@ func NewHandler(q *pgstore.Queries) http.Handler {
 		MaxAge:           300,
 	}))
 
-	r.Get("/subscribe/{room_id}", a.handleSubscribe)
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"https://*", "http://*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Host-Token"},
+		ExposedHeaders:   []string{"Link"},
+		AllowCredentials: false,
+		MaxAge:           300,
+	}))
+
+	// Rota de health check para monitoramento e Docker
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+
+		// Incluir informações úteis para monitoramento
+		response := map[string]interface{}{
+			"status":    "ok",
+			"service":   "ask-me-anything",
+			"version":   "1.0.0",
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+			"uptime":    time.Since(time.Now()).String(), // Placeholder - pode ser melhorado
+		}
+
+		json.NewEncoder(w).Encode(response)
+	})
+
+	// Rota adicional para informações detalhadas do sistema (opcional)
+	r.Get("/status", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		status := map[string]interface{}{
+			"service":     "ask-me-anything",
+			"version":     "1.0.0",
+			"environment": "development", // Pode vir de variável de ambiente
+			"timestamp":   time.Now().UTC().Format(time.RFC3339),
+			"endpoints": map[string]interface{}{
+				"health":    "/health",
+				"api":       "/api/rooms",
+				"websocket": "/subscribe/{room_id}",
+			},
+		}
+
+		json.NewEncoder(w).Encode(status)
+	})
 
 	r.Route("/api", func(r chi.Router) {
+		// Aplicar timeout apenas nas rotas da API, não no WebSocket
+		r.Use(custommiddleware.TimeoutMiddleware(custommiddleware.DefaultRequestTimeout))
 		r.Route("/rooms", func(r chi.Router) {
 			r.Post("/", a.handleCreateRoom)
 			r.Get("/", a.handleGetRooms)
@@ -90,8 +139,26 @@ func NewHandler(q *pgstore.Queries) http.Handler {
 		})
 	})
 
+	// Exibir todas as rotas registradas no terminal
+	utils.LogRoutes(r)
+
 	a.r = r
-	return a
+
+	// Retornar um handler que separa WebSocket das outras rotas
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		logger.Default.Info(req.Context(), "Request intercepted", "method", req.Method, "path", req.URL.Path)
+
+		// Verificar se é uma rota WebSocket usando strings.HasPrefix
+		if req.Method == "GET" && strings.HasPrefix(req.URL.Path, "/subscribe/") {
+			logger.Default.Info(req.Context(), "WebSocket route detected", "path", req.URL.Path)
+			a.handleSubscribeRaw(w, req)
+			return
+		}
+
+		logger.Default.Info(req.Context(), "Routing to normal handler", "path", req.URL.Path)
+		// Para todas as outras rotas, usar o router normal
+		a.r.ServeHTTP(w, req)
+	})
 }
 
 const (
@@ -240,4 +307,83 @@ func (h apiHandler) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 	h.mu.Unlock()
 
 	logger.Default.Info(context.Background(), "client disconnected", "room_id", rawRoomID, "client_ip", r.RemoteAddr, "remaining_subscribers", remainingSubscribers)
+}
+
+// handleSubscribeRaw - Handler WebSocket completo com broadcast
+func (h apiHandler) handleSubscribeRaw(w http.ResponseWriter, r *http.Request) {
+	// Extrair room_id da URL
+	roomID := r.URL.Path[11:] // Remove "/subscribe/"
+	if roomID == "" {
+		http.Error(w, "room_id is required", http.StatusBadRequest)
+		return
+	}
+
+	logger.Default.Info(r.Context(), "WebSocket connection attempt", "room_id", roomID, "client_ip", r.RemoteAddr)
+
+	// Upgrader básico
+	upgrader := websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool { return true },
+	}
+
+	// Tentar upgrade direto
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		logger.Default.Warn(r.Context(), "upgrade failed", "error", err, "room_id", roomID)
+		return
+	}
+	defer conn.Close()
+
+	logger.Default.Info(r.Context(), "WebSocket connected successfully", "room_id", roomID, "client_ip", r.RemoteAddr)
+
+	// Context para gerenciar a conexão
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	// Registrar cliente nos subscribers
+	h.mu.Lock()
+	if _, ok := h.subscribers[roomID]; !ok {
+		h.subscribers[roomID] = make(map[*websocket.Conn]context.CancelFunc)
+	}
+	h.subscribers[roomID][conn] = cancel
+	subscriberCount := len(h.subscribers[roomID])
+	h.mu.Unlock()
+
+	logger.Default.Info(ctx, "client registered", "room_id", roomID, "total_subscribers", subscriberCount)
+
+	// Configurar timeouts e handlers para manter conexão viva
+	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+
+	// Goroutine para enviar pings
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+					logger.Default.Debug(ctx, "failed to send ping", "error", err, "room_id", roomID)
+					cancel()
+					return
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	// Aguardar até a conexão ser fechada
+	<-ctx.Done()
+
+	// Limpar cliente dos subscribers
+	h.mu.Lock()
+	delete(h.subscribers[roomID], conn)
+	remainingSubscribers := len(h.subscribers[roomID])
+	h.mu.Unlock()
+
+	logger.Default.Info(context.Background(), "client disconnected", "room_id", roomID, "client_ip", r.RemoteAddr, "remaining_subscribers", remainingSubscribers)
 }

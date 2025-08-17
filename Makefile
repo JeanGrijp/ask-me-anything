@@ -306,22 +306,136 @@ docker-run: ## Executa aplicação no Docker
 	@docker run -p 8080:8080 --env-file .env $(APP_NAME):latest
 
 .PHONY: docker-reload
-docker-reload: ## Para containers deste projeto e rebuilda tudo novamente
-	@echo "$(YELLOW)🔄 Parando containers do projeto ask-me-anything...$(NC)"
-	@docker compose down
-	@echo "$(YELLOW)🏗️  Rebuildando e iniciando containers...$(NC)"
-	@docker compose up --build
-	@echo "$(GREEN)✅ Containers rebuildados e iniciados$(NC)"
-	@echo "$(GREEN)✅ PostgreSQL: localhost:5432$(NC)"
-	@echo "$(GREEN)✅ pgAdmin: http://localhost:8081$(NC)"
+docker-reload: ## Rebuilda apenas a aplicação preservando banco de dados
+	@echo "$(BLUE)🔄 ===== DOCKER RELOAD (PRESERVANDO DADOS) =====$(NC)"
+	@echo "$(YELLOW)⏹️  Parando apenas o container da aplicação...$(NC)"
+	@docker compose stop app 2>/dev/null || true
+	@docker compose rm -f app 2>/dev/null || true
+	@echo "$(GREEN)✅ Container da app removido$(NC)"
 	@echo ""
-	@echo "$(BLUE)📋 Logs dos serviços (Ctrl+C para sair):$(NC)"
-	@docker compose logs -f
+	@echo "$(YELLOW)🧹 Removendo imagem antiga da aplicação...$(NC)"
+	@docker rmi ask-me-anything-app:latest 2>/dev/null || true
+	@echo "$(GREEN)✅ Imagem antiga removida$(NC)"
+	@echo ""
+	@echo "$(YELLOW)🏗️  Reconstruindo apenas a aplicação...$(NC)"
+	@docker compose build --no-cache app
+	@echo "$(GREEN)✅ Build da aplicação concluído$(NC)"
+	@echo ""
+	@echo "$(YELLOW)🚀 Iniciando aplicação...$(NC)"
+	@docker compose up -d app
+	@echo ""
+	@echo "$(BLUE)⏳ Aguardando aplicação ficar pronta...$(NC)"
+	@sleep 3
+	@echo ""
+	@echo "$(GREEN)🎉 ===== APLICAÇÃO ATUALIZADA =====$(NC)"
+	@echo "$(GREEN)✅ API: http://localhost:8080$(NC)"
+	@echo "$(BLUE)💾 Banco de dados preservado$(NC)"
+	@echo ""
+	@echo "$(BLUE)� Status dos containers:$(NC)"
+	@docker compose ps
+	@echo ""
+	@echo "$(BLUE)🔗 Testando API...$(NC)"
+	@sleep 2
+	@curl -s -o /dev/null -w "Status: %{http_code} | Tempo: %{time_total}s\n" http://localhost:8080/api/rooms || echo "$(YELLOW)⚠️  API ainda não respondeu (aguarde alguns segundos)$(NC)"
+	@echo ""
+	@echo "$(BLUE)📋 Logs da aplicação (Ctrl+C para sair):$(NC)"
+	@echo "$(YELLOW)💡 Use 'make docker-logs' para ver logs novamente$(NC)"
+	@echo ""
+	@docker compose logs -f app
 
 .PHONY: docker-logs
 docker-logs: ## Mostra logs dos containers em tempo real
 	@echo "$(BLUE)📋 Logs dos serviços Docker (Ctrl+C para sair):$(NC)"
 	@docker compose logs -f
+
+.PHONY: docker-quick
+docker-quick: ## Restart rápido da aplicação (sem rebuild)
+	@echo "$(BLUE)⚡ ===== RESTART RÁPIDO =====$(NC)"
+	@echo "$(YELLOW)🔄 Reiniciando apenas a aplicação...$(NC)"
+	@docker compose restart app
+	@echo "$(GREEN)✅ Aplicação reiniciada$(NC)"
+	@echo "$(GREEN)✅ API: http://localhost:8080$(NC)"
+	@sleep 2
+	@docker compose logs --tail=10 app
+
+.PHONY: docker-full-restart
+docker-full-restart: ## Reinicia todos os serviços (preservando dados)
+	@echo "$(BLUE)🔄 ===== RESTART COMPLETO (PRESERVANDO DADOS) =====$(NC)"
+	@echo "$(YELLOW)⏹️  Parando todos os containers...$(NC)"
+	@docker compose down
+	@echo "$(YELLOW)🚀 Iniciando todos os serviços...$(NC)"
+	@docker compose up -d
+	@echo "$(GREEN)✅ Todos os serviços reiniciados$(NC)"
+	@echo "$(GREEN)✅ API: http://localhost:8080$(NC)"
+	@echo "$(GREEN)✅ PostgreSQL: localhost:5432$(NC)"
+	@echo "$(GREEN)✅ pgAdmin: http://localhost:8081$(NC)"
+	@docker compose ps
+
+.PHONY: docker-clean
+docker-clean: ## Limpeza completa (remove volumes, imagens órfãs)
+	@echo "$(BLUE)🧹 ===== LIMPEZA COMPLETA =====$(NC)"
+	@echo "$(YELLOW)⚠️  Isso vai remover containers, volumes e imagens não utilizadas$(NC)"
+	@read -p "Continuar? [y/N]: " confirm && [ "$$confirm" = "y" ] || exit 1
+	@docker compose down -v --remove-orphans
+	@docker system prune -f
+	@docker volume prune -f
+	@echo "$(GREEN)✅ Limpeza concluída$(NC)"
+
+.PHONY: docker-fresh-start
+docker-fresh-start: ## ⚠️  RESET COMPLETO - Apaga TODOS os dados e recria tudo
+	@echo "$(RED)⚠️  ===== RESET COMPLETO - APAGA TODOS OS DADOS =====$(NC)"
+	@echo "$(RED)⚠️  Isso vai APAGAR todos os dados do banco!$(NC)"
+	@read -p "Tem certeza que quer APAGAR TODOS OS DADOS? [y/N]: " confirm && [ "$$confirm" = "y" ] || exit 1
+	@echo "$(YELLOW)🗑️  Removendo tudo...$(NC)"
+	@docker compose down -v --remove-orphans
+	@docker rmi ask-me-anything-app:latest 2>/dev/null || true
+	@echo "$(YELLOW)🏗️  Recriando tudo do zero...$(NC)"
+	@docker compose up --build -d
+	@echo "$(GREEN)✅ Sistema recriado do zero$(NC)"
+	@echo "$(GREEN)✅ API: http://localhost:8080$(NC)"
+	@echo "$(GREEN)✅ PostgreSQL: localhost:5432$(NC)"
+	@echo "$(GREEN)✅ pgAdmin: http://localhost:8081$(NC)"
+	@echo "$(YELLOW)💡 Execute 'make migrate-up' para criar as tabelas$(NC)"
+
+.PHONY: docker-status
+docker-status: ## Mostra status detalhado dos containers
+	@echo "$(BLUE)📊 ===== STATUS DOS CONTAINERS =====$(NC)"
+	@docker compose ps -a
+	@echo ""
+	@echo "$(BLUE)💾 Uso de recursos:$(NC)"
+	@docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.BlockIO}}"
+	@echo ""
+	@echo "$(BLUE)🔗 Endpoints disponíveis:$(NC)"
+	@echo "$(GREEN)✅ API: http://localhost:8080$(NC)"
+	@echo "$(GREEN)✅ API Health: http://localhost:8080/api/rooms$(NC)"
+	@echo "$(GREEN)✅ PostgreSQL: localhost:5432$(NC)"
+	@echo "$(GREEN)✅ pgAdmin: http://localhost:8081$(NC)"
+
+# ===========================
+# 🧪 API TESTING & MONITORING
+# ===========================
+
+.PHONY: test-api
+test-api: ## Testa endpoints principais da API
+	@echo "$(BLUE)🧪 ===== TESTANDO API =====$(NC)"
+	@echo "$(YELLOW)📡 Testando conexão...$(NC)"
+	@curl -s -o /dev/null -w "GET /api/rooms - Status: %{http_code} | Tempo: %{time_total}s\n" http://localhost:8080/api/rooms || echo "❌ API não está respondendo"
+	@echo ""
+	@echo "$(YELLOW)📝 Criando sala de teste...$(NC)"
+	@curl -s -X POST http://localhost:8080/api/rooms \
+		-H "Content-Type: application/json" \
+		-d '{"theme": "Sala de Teste - $(shell date +%H:%M:%S)"}' \
+		-w "POST /api/rooms - Status: %{http_code} | Tempo: %{time_total}s\n" || echo "❌ Erro ao criar sala"
+	@echo ""
+	@echo "$(YELLOW)📋 Listando salas...$(NC)"
+	@curl -s http://localhost:8080/api/rooms | jq '.' 2>/dev/null || curl -s http://localhost:8080/api/rooms
+
+.PHONY: monitor
+monitor: ## Monitor em tempo real dos logs da API
+	@echo "$(BLUE)📡 ===== MONITOR DA API =====$(NC)"
+	@echo "$(YELLOW)💡 Pressione Ctrl+C para sair$(NC)"
+	@echo ""
+	@docker compose logs -f app | grep --line-buffered -E "(INFO|ERROR|WARN|🚀|📍|🎯)" --color=always
 
 # ===========================
 # 🔧 UTILITIES
@@ -377,6 +491,17 @@ info: ## Mostra informações do projeto
 .PHONY: setup
 setup: deps env-copy db-up migrate-up install-tools ## Setup completo do projeto
 	@echo "$(GREEN)🎉 Setup completo! Execute 'make run' para iniciar$(NC)"
+
+.PHONY: start
+start: docker-reload test-api ## Rebuilda a aplicação e testa
+	@echo "$(GREEN)🎉 ===== APLICAÇÃO PRONTA! =====$(NC)"
+	@echo "$(BLUE)📝 Comandos úteis para desenvolvimento:$(NC)"
+	@echo "  $(GREEN)make docker-reload$(NC)      - Rebuilda apenas a app (preserva dados)"
+	@echo "  $(GREEN)make docker-quick$(NC)       - Restart rápido (sem rebuild)"
+	@echo "  $(GREEN)make docker-full-restart$(NC) - Restart completo (preserva dados)"
+	@echo "  $(GREEN)make monitor$(NC)            - Monitor dos logs"
+	@echo "  $(GREEN)make test-api$(NC)           - Testar API"
+	@echo "  $(GREEN)make docker-status$(NC)      - Status dos containers"
 
 .PHONY: restart
 restart: db-restart run ## Reinicia banco e aplicação
