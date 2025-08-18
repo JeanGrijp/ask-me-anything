@@ -1,286 +1,318 @@
 # Ask Me Anything - API
 
-Uma aplicação de perguntas e respostas construída em Go com PostgreSQL, WebSockets e SQLC.
+Uma aplicação moderna de perguntas e respostas em tempo real construída em Go com PostgreSQL, WebSockets e autenticação por sessão.
 
 ## 🚀 Tecnologias
 
 - **Backend**: Go 1.25+
 - **Database**: PostgreSQL
 - **Router**: Chi
-- **WebSocket**: Gorilla WebSocket
-- **Database Query**: SQLC
-- **Migrations**: golang-migrate
-- **Logs**: zap (uber-go)
-- **Containerização**: Docker & Docker Compose
-
-## 🔄 Mudanças Recentes
-
-### Schema Alignment (Migration 002)
-
-**Principais mudanças implementadas:**
-
-1. **Simplificação do Schema**: Removidas tabelas complexas (`categories`, `votes`) para focar nas entidades principais
-2. **Alinhamento com Models**: Schema do banco agora reflete exatamente os structs Go
-3. **Queries Atualizadas**: Todas as queries SQLC foram atualizadas para usar os novos campos
-4. **Migração Criada**: Nova migração `002_align_with_models` pronta para aplicação
-
-**Estrutura Final:**
-- Users com roles simplificados (admin, user, guest)
-- Questions com like_count integrado
-- Answers vinculadas a questions
-- Rooms com ownership por user
-- Magic links para autenticação sem senha
-
-**Próximos Passos:**
-```bash
-# Aplicar a migração
-make migrate-up
-
-# Gerar código SQLC atualizado
-make sqlc-generate
-
-# Testar a aplicação
-make run
-```
-
-## 📝 TODO
-
-- [x] ~~Implementar autenticação JWT~~
-- [x] ~~Adicionar middleware de CORS~~
-- [x] ~~Implementar rate limiting~~
-- [x] ~~Implementar autenticação Magic Link~~
-- [x] ~~Separar Routes de Handlers~~
-- [x] ~~Alinhar Schema com Models Go~~a WebSocket
+- **WebSocket**: Gorilla WebSocket  
 - **Database Query**: SQLC
 - **Migrations**: golang-migrate
 - **Logs**: slog (built-in)
+- **Session Management**: Cookie-based com auto-renewal
 - **Containerização**: Docker & Docker Compose
+
+## ✨ Funcionalidades Implementadas
+
+### 🔐 Sistema de Autenticação
+- **Sessões por Cookie**: Autenticação automática via cookies HttpOnly
+- **Auto-renovação**: Sessões renovadas automaticamente por 24 horas
+- **Rastreamento de Usuários**: Sistema completo de sessões persistentes no banco
+
+### 🏠 Gerenciamento de Salas
+- **Criação de Salas**: Usuários podem criar salas de perguntas
+- **Host Sessions**: Sistema de tokens de host para criadores de salas
+- **Deleção Segura**: Apenas criadores podem deletar suas salas
+- **Verificação de Ownership**: Validação de propriedade das salas
+
+### 💬 Sistema de Mensagens
+- **Envio de Perguntas**: Usuários podem enviar perguntas nas salas
+- **Reações**: Sistema de "likes" nas mensagens
+- **Rastreamento de Reações**: Usuários sabem quais mensagens já reagiram
+- **Respostas do Host**: Hosts podem marcar mensagens como respondidas
+
+### � WebSocket em Tempo Real
+- **Mensagens em Tempo Real**: Novas mensagens aparecem instantaneamente
+- **Contadores de Reações**: Atualização de likes em tempo real
+- **Notificações de Sala Deletada**: Usuários são notificados quando sala é removida
+- **Sincronização**: Todos os clientes conectados recebem atualizações
+
+### 🎯 Recursos Avançados
+- **Estado de Reações**: Frontend sabe quais mensagens o usuário reagiu
+- **Deleção em Cascata**: Remover sala deleta mensagens e reações automaticamente
+- **CORS Configurado**: Suporte para cookies entre domínios
+- **Logging Estruturado**: Logs limpos e informativos
 
 ## 📁 Estrutura do Projeto
 
 ```
 ask-me-anything/
 ├── cmd/                    # Aplicação principal
-│   └── main.go
+│   ├── wsrs/              # WebSocket Rooms Server
+│   └── tools/             # Ferramentas auxiliares
 ├── internal/               # Código interno da aplicação
-│   ├── config/            # Configurações
-│   ├── database/          # Conexão com o banco
-│   ├── handlers/          # Handlers HTTP e WebSocket
-│   ├── models/            # Modelos de dados
-│   └── services/          # Lógica de negócio
+│   ├── api/               # Handlers HTTP e WebSocket
+│   ├── auth/              # Sistema de autenticação e sessões
+│   ├── logger/            # Sistema de logs estruturados
+│   ├── middleware/        # Middlewares da aplicação
+│   ├── responses/         # Helpers para respostas HTTP
+│   ├── store/pgstore/     # Queries e models do PostgreSQL
+│   └── validators/        # Validadores de entrada
 ├── migrations/            # Migrações do banco de dados
-├── queries/               # Queries SQL para SQLC
+├── docs/                  # Documentação da API
 ├── docker-compose.yml     # Configuração Docker
 ├── Dockerfile            # Build da aplicação
 ├── Makefile              # Comandos de automação
 └── sqlc.yaml             # Configuração do SQLC
 ```
 
-## 🛠️ Configuração
+## �️ Schema do Banco de Dados
 
-### Pré-requisitos
+### Tabelas Principais
 
-- Go 1.24+
-- Docker & Docker Compose
-- Make
+- **`rooms`**: Salas de perguntas com tema
+- **`messages`**: Mensagens/perguntas enviadas nas salas
+- **`user_sessions`**: Sessões de usuários com cookies
+- **`user_reactions`**: Reações dos usuários nas mensagens
+- **`room_creators`**: Relacionamento entre usuários e salas criadas
 
-### Instalação das Ferramentas
+### Relacionamentos
 
-```bash
-make install-tools
-```
-
-### Variáveis de Ambiente
-
-Copie o arquivo de exemplo:
-
-```bash
-cp .env.example .env
-```
-
-Edite o arquivo `.env` conforme necessário.
-
-## 🏃‍♂️ Executando o Projeto
-
-### Desenvolvimento Local
-
-1. **Subir o banco de dados:**
-```bash
-make docker-up
-```
-
-2. **Executar migrações:**
-```bash
-make migrate-up
-```
-
-3. **Gerar código SQLC:**
-```bash
-make sqlc-generate
-```
-
-4. **Executar a aplicação:**
-```bash
-make run
-```
-
-### Comando Único para Desenvolvimento
-
-```bash
-make dev
-```
-
-## 🐳 Docker
-
-### Executar com Docker Compose
-
-```bash
-docker-compose up -d
-```
-
-### Build da aplicação
-
-```bash
-make build
+```sql
+rooms (1) ←→ (N) messages
+rooms (1) ←→ (1) room_creators ←→ (1) user_sessions
+messages (1) ←→ (N) user_reactions ←→ (1) user_sessions
 ```
 
 ## 📊 API Endpoints
 
-### Health Check
-- `GET /health` - Status da aplicação
+### 🏠 Salas (Rooms)
+- `GET /api/rooms/` - Listar todas as salas
+- `POST /api/rooms/` - Criar nova sala (retorna host_token)
+- `GET /api/rooms/{room_id}/` - Obter detalhes da sala
+- `DELETE /api/rooms/{room_id}/` - Deletar sala (apenas criador)
+- `GET /api/rooms/{room_id}/host-status` - Verificar se é host da sala
 
-### Usuários
-- `GET /api/v1/users` - Listar usuários
-- `POST /api/v1/users` - Criar usuário
-- `GET /api/v1/users/{id}` - Obter usuário
-- `PUT /api/v1/users/{id}` - Atualizar usuário
-- `DELETE /api/v1/users/{id}` - Deletar usuário
+### 💬 Mensagens
+- `GET /api/rooms/{room_id}/messages/` - Listar mensagens da sala
+- `POST /api/rooms/{room_id}/messages/` - Enviar nova mensagem
+- `GET /api/rooms/{room_id}/messages/{message_id}/` - Obter mensagem específica
+- `PATCH /api/rooms/{room_id}/messages/{message_id}/answer` - Marcar como respondida (host)
+- `PATCH /api/rooms/{room_id}/messages/{message_id}/react` - Reagir à mensagem
+- `DELETE /api/rooms/{room_id}/messages/{message_id}/react` - Remover reação
 
-### Perguntas
-- `GET /api/v1/questions` - Listar perguntas
-- `POST /api/v1/questions` - Criar pergunta
-- `GET /api/v1/questions/{id}` - Obter pergunta
-- `PUT /api/v1/questions/{id}` - Atualizar pergunta
-- `DELETE /api/v1/questions/{id}` - Deletar pergunta
+### 👤 Usuário
+- `GET /api/user/rooms` - Listar salas criadas pelo usuário
+- `DELETE /api/user/logout` - Fazer logout (invalidar sessão)
 
-### Respostas
-- `GET /api/v1/answers` - Listar respostas
-- `POST /api/v1/answers` - Criar resposta
-- `GET /api/v1/answers/{id}` - Obter resposta
-- `PUT /api/v1/answers/{id}` - Atualizar resposta
-- `DELETE /api/v1/answers/{id}` - Deletar resposta
+### 🔄 WebSocket
+- `WS /subscribe/{room_id}` - Conexão WebSocket para atualizações em tempo real
 
-### WebSocket
-- `WS /ws` - Conexão WebSocket para atualizações em tempo real
+### 🩺 Sistema
+- `GET /health` - Health check da aplicação
+- `GET /status` - Status detalhado do sistema
 
-## 🗄️ Banco de Dados
+## 📡 WebSocket Events
 
-### Entidades Principais (Models)
+### Eventos Enviados pelo Servidor
 
-- **Users**: Usuários da plataforma com roles (admin, user, guest)
-- **Questions**: Perguntas com sistema de likes
-- **Answers**: Respostas às perguntas
-- **Rooms**: Salas de perguntas gerenciadas por proprietários
-- **Magic Links**: Sistema de autenticação sem senha
+```json
+// Nova mensagem criada
+{
+  "kind": "message_created",
+  "room_id": "uuid",
+  "value": {
+    "id": "uuid", 
+    "message": "texto da mensagem"
+  }
+}
 
-### Schema Atualizado
+// Reação adicionada
+{
+  "kind": "message_reaction_increased",
+  "room_id": "uuid", 
+  "value": {
+    "id": "message_uuid",
+    "count": 5
+  }
+}
 
-O banco foi alinhado com os models Go definidos em `internal/models/`:
+// Reação removida
+{
+  "kind": "message_reaction_decreased", 
+  "room_id": "uuid",
+  "value": {
+    "id": "message_uuid", 
+    "count": 4
+  }
+}
 
-**User Model:**
-```go
-type User struct {
-    ID        int64    `json:"id" db:"id"`
-    Email     string   `json:"email" db:"email"`
-    Name      string   `json:"name" db:"name"`
-    Role      UserRole `json:"role" db:"role"`
-    CreatedAt string   `json:"created_at" db:"created_at"`
+// Mensagem marcada como respondida
+{
+  "kind": "message_answered",
+  "room_id": "uuid",
+  "value": {
+    "id": "message_uuid"
+  }
+}
+
+// Sala foi deletada
+{
+  "kind": "room_deleted",
+  "room_id": "uuid", 
+  "value": {
+    "id": "room_uuid",
+    "reason": "deleted_by_creator"
+  }
 }
 ```
 
-**Question Model:**
-```go
-type Question struct {
-    ID        int64  `json:"id" db:"id"`
-    Content   string `json:"content" db:"content"`
-    UserID    int64  `json:"user_id" db:"user_id"`
-    LikeCount int64  `json:"like_count" db:"like_count"`
-}
+## 🔐 Autenticação
+
+### Sistema de Sessões
+
+A autenticação é baseada em cookies HttpOnly que são automaticamente gerenciados:
+
+```javascript
+// Todas as requisições incluem cookies automaticamente
+fetch('/api/rooms/', {
+  credentials: 'include'  // Importante para cookies
+})
 ```
 
-**Answer Model:**
-```go
-type Answer struct {
-    ID       int64    `json:"id" db:"id"`
-    Question Question `json:"question" db:"question"`
-    Answer   string   `json:"answer" db:"answer"`
-    UserID   int64    `json:"user_id" db:"user_id"`
-}
+### Headers Especiais
+
+```javascript
+// Para operações de host (verificar se é criador da sala)
+fetch('/api/rooms/uuid/host-status', {
+  headers: {
+    'X-Host-Token': 'token-retornado-na-criacao-da-sala'
+  }
+})
 ```
 
-**Room Model:**
-```go
-type Room struct {
-    ID      int64  `json:"id" db:"id"`
-    Name    string `json:"name" db:"name"`
-    OwnerID int64  `json:"owner_id" db:"owner_id"`
-}
-```
+## 🛠️ Configuração e Execução
 
-### Migrações
+### Pré-requisitos
 
-Criar nova migração:
+- Docker & Docker Compose
+- Make
+
+### Execução com Docker (Recomendado)
+
+**Iniciar tudo de uma vez:**
 ```bash
-make migrate-create name=nome_da_migracao
+docker-compose up -d
 ```
 
-Aplicar migrações:
+**Comandos do Makefile:**
 ```bash
+# Recarregar aplicação preservando dados
+make docker-reload
+
+# Parar containers
+make docker-down
+
+# Ver logs da aplicação
+make docker-logs
+
+# Limpar tudo e recomeçar
+make docker-clean
+```
+
+### Desenvolvimento Local (Opcional)
+
+Se quiser rodar localmente sem Docker:
+
+```bash
+# 1. Subir apenas o banco PostgreSQL
+make docker-db
+
+# 2. Aplicar migrações
 make migrate-up
+
+# 3. Executar aplicação localmente
+make run
 ```
 
-Reverter migrações:
+### Comandos Úteis
+
 ```bash
-make migrate-down
+# Regenerar código SQLC após mudanças nas queries
+make sqlc-generate
+
+# Criar nova migração
+make migrate-create name=nome_da_migracao
+
+# Ver status das migrações
+make migrate-status
+```
+
+## 🔗 URLs da Aplicação
+
+Após iniciar com `docker-compose up -d`:
+
+- **API**: http://localhost:8080
+- **Health Check**: http://localhost:8080/health
+- **WebSocket**: ws://localhost:8080/subscribe/{room_id}
+
+## 📋 Exemplos de Uso
+
+### Criar Sala e Enviar Mensagem
+
+```bash
+# 1. Criar sala
+curl -X POST "http://localhost:8080/api/rooms/" \
+  -H "Content-Type: application/json" \
+  -d '{"theme":"Minha sala de perguntas"}' \
+  --cookie-jar cookies.txt
+
+# Resposta: {"id":"uuid","host_token":"token"}
+
+# 2. Enviar mensagem
+curl -X POST "http://localhost:8080/api/rooms/{room_id}/messages/" \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Minha pergunta"}' \
+  --cookie cookies.txt
+
+# 3. Reagir à mensagem  
+curl -X PATCH "http://localhost:8080/api/rooms/{room_id}/messages/{msg_id}/react" \
+  --cookie cookies.txt
+
+# 4. Verificar se é host
+curl -X GET "http://localhost:8080/api/rooms/{room_id}/host-status" \
+  -H "X-Host-Token: {host_token}"
 ```
 
 ## 🧪 Testes
 
 ```bash
+# Executar testes
 make test
+
+# Testes com cobertura
+make test-coverage
 ```
 
-## 📝 Comandos Makefile
+## 📝 TODO Implementado
 
-- `make build` - Compilar a aplicação
-- `make run` - Executar a aplicação
-- `make test` - Executar testes
-- `make clean` - Limpar binários
-- `make docker-up` - Subir containers
-- `make docker-down` - Parar containers
-- `make migrate-up` - Aplicar migrações
-- `make migrate-down` - Reverter migrações
-- `make sqlc-generate` - Gerar código SQLC
-- `make dev` - Ambiente de desenvolvimento completo
-- `make tidy` - Organizar dependências Go
-
-## 📋 TODO
-
-- [ ] Implementar autenticação JWT
-- [ ] Adicionar middleware de CORS
-- [ ] Implementar rate limiting
-- [ ] Adicionar cache Redis
-- [ ] Implementar notificações WebSocket
-- [ ] Adicionar testes unitários
-- [ ] Documentação Swagger/OpenAPI
-- [ ] Métricas e monitoramento
+- ✅ **Sistema de Sessões**: Autenticação por cookies HttpOnly
+- ✅ **WebSocket Real-time**: Mensagens e reações em tempo real  
+- ✅ **Gerenciamento de Salas**: Criação, deleção e ownership
+- ✅ **Sistema de Reações**: Like/unlike com rastreamento por usuário
+- ✅ **CORS Configurado**: Suporte para frontend separado
+- ✅ **Logs Estruturados**: Sistema de logging limpo e informativo
+- ✅ **Deleção em Cascata**: Remoção segura de salas com dados relacionados
+- ✅ **Docker Completo**: Ambiente totalmente containerizado
 
 ## 🤝 Contribuição
 
 1. Fork o projeto
 2. Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)
 3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
-4. Push para a branch (`git push origin feature/AmazingFeature`)
+4. Push para a branch (`git push origin feature/AmazingFeature`)  
 5. Abra um Pull Request
 
 ## 📄 Licença
