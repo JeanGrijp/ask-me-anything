@@ -336,7 +336,7 @@ func (h apiHandler) handleSubscribeRaw(w http.ResponseWriter, r *http.Request) {
 	// Tentar upgrade direto
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		logger.Default.Warn(r.Context(), "upgrade failed", "error", err, "room_id", roomID)
+		logger.Default.Error(r.Context(), "upgrade failed", "error", err, "room_id", roomID)
 		return
 	}
 	defer conn.Close()
