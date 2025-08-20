@@ -442,12 +442,15 @@ monitor: ## Monitor em tempo real dos logs da API
 # ===========================
 
 .PHONY: env-copy
-env-copy: ## Copia .env.example para .env
-	@if [ ! -f .env ]; then \
+env-copy: ## Cria .env (se existir um template, usa; senão, cria vazio)
+	@if [ -f .env ]; then \
+		echo "$(YELLOW)⚠️  Arquivo .env já existe$(NC)"; \
+	elif [ -f .env.example ]; then \
 		cp .env.example .env; \
 		echo "$(GREEN)✅ Arquivo .env criado a partir do .env.example$(NC)"; \
 	else \
-		echo "$(YELLOW)⚠️  Arquivo .env já existe$(NC)"; \
+		touch .env; \
+		echo "$(YELLOW)ℹ️  .env.example não encontrado; criado .env vazio$(NC)"; \
 	fi
 
 .PHONY: env-show

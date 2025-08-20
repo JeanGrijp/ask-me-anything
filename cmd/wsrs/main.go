@@ -19,8 +19,9 @@ import (
 func main() {
 	ctx := context.Background()
 
+	// Carrega variáveis de ambiente de um arquivo .env se presente (opcional)
 	if err := godotenv.Load(); err != nil {
-		logger.Default.Fatal(ctx, "failed to load environment variables", "error", err)
+		logger.Default.Info(ctx, "no .env file found or failed to load; relying on environment", "error", err)
 	}
 
 	logger.Default.Info(ctx, "starting application")

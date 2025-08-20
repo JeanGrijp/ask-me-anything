@@ -54,7 +54,7 @@ Dockerfile*
 docker-compose*
 compose*
 
-# Environment (será copiado apenas o .env.example)
+# Environment (não copie .env para a imagem; configure via env vars/compose)
 .env
 
 # Dependencies (serão baixadas durante o build)

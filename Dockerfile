@@ -39,7 +39,7 @@ WORKDIR /app
 
 # Copiar binário do stage de build
 COPY --from=builder /app/main .
-COPY --from=builder /app/.env.example .env
+    # .env.example is no longer copied; loading .env is optional
 
 # Mudar ownership para usuário não-root
 RUN chown appuser:appgroup main
