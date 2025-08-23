@@ -1,6 +1,6 @@
-# Ask Me Anything (Client + Server)
+<h1 align="center">Ask Me Anything (Client + Server)</h1>
 
-<!-- markdownlint-disable MD033 -->
+<!-- markdownlint-disable MD033 MD041 -->
 <div align="center">
   <p>Real-time Q&A application unified in a single repository with a Next.js frontend and a Go backend.</p>
   
